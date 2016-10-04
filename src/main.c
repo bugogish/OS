@@ -18,9 +18,9 @@ void main(void)
 	setup();
 	idtsetup();
 	PIC_setup();
-__asm__ __volatile__ ("sti");
+	enable_ints();
 
 	PIT_setup();
-while(1);
+	while(1);
 	
 }
