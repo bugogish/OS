@@ -2,12 +2,14 @@
 #define __IOPORT_H__
 
 #include <stdint.h>
+#include <stddef.h>
 extern unsigned short const port_c;
 
 void setup(void);
-
 void send_info(char data[]);
-void send_int_info(uint64_t var); 
+void send_int_info(uint64_t var);
+void serial_putchar(int c);
+void serial_write(const char *buf, size_t size);
 
 static inline void out8(unsigned short port, uint8_t data)
 { __asm__ volatile("outb %0, %1" : : "a"(data), "d"(port)); }

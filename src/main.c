@@ -1,26 +1,41 @@
-static void qemu_gdb_hang(void)
-{
-#ifdef DEBUG
-	static volatile int wait = 1;
-
-	while (wait);
-#endif
-}
-
 #include <ints.h>
 #include <ioport.h>
 #include <desc.h>
 #include <PIT.h>
-#define UNUSED(x) (void)(x)
-void main(void)
-{
-	qemu_gdb_hang();
-	setup();
-	idtsetup();
-	PIC_setup();
-	enable_ints();
+#include <multiboot_header.h>
+#include <memory_management.h>
+#include <print.h>
 
-	PIT_setup();
-	while(1);
-	
+#define UNUSED(x) (void)(x)
+
+void foo(const int i) {
+    UNUSED(i);
+}
+
+
+static void qemu_gdb_hang(void) {
+#ifdef DEBUG
+    static volatile int wait = 1;
+
+    while (wait);
+#endif
+}
+
+
+void main(struct multiboot_info *trash, struct multiboot_info *mbi) {
+    qemu_gdb_hang();
+    UNUSED (trash);
+    read_memory_map(mbi);
+
+    unsigned long test = buddy_allocate(8);
+    buddy_free(8, test);
+    printf("%d",  test);
+    
+    setup();
+    idtsetup();
+    PIC_setup();
+    enable_ints();
+    PIT_setup();
+
+
 }

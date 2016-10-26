@@ -8,8 +8,8 @@
 	.code32
 	.global start32
 	.extern main
-
-
+    .global mboot_ptr
+    mboot_ptr:   .long 0
 	.align 16
 start32:
 	jmp 1f
@@ -55,6 +55,9 @@ stack_top:
 
 1:
 	movl $stack_top, %esp
+	
+	mov %ebx, %esi
+	
 	pushl %eax
 	call videomem_clrscr
 	popl %eax
@@ -224,6 +227,8 @@ start64:
 	movq %rax, %rsp
 
 	cld
+  
+  
 	movabsq $main, %rax
 	call *%rax
 

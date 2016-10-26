@@ -35,9 +35,6 @@ void create_entry(unsigned char i) {
 }
 
 void idtsetup (void) {
-
-
-	
 	for (int i = 0; i < 256; i ++) {
 		create_entry(i);
 	}
