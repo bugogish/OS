@@ -25,17 +25,19 @@ static void qemu_gdb_hang(void) {
 void main(struct multiboot_info *trash, struct multiboot_info *mbi) {
     qemu_gdb_hang();
     UNUSED (trash);
-    read_memory_map(mbi);
-
-    unsigned long test = buddy_allocate(8);
-    buddy_free(8, test);
-    printf("%d",  test);
-    
+        
     setup();
     idtsetup();
     PIC_setup();
     enable_ints();
-    PIT_setup();
+    
+    read_memory_map(mbi);
+
+    unsigned long test = buddy_allocate(0);
+    buddy_free(test);
+    printf("%d",  test);
+
+    //PIT_setup();
 
 
 }

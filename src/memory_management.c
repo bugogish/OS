@@ -4,21 +4,18 @@
 #include <stdlib.h>
 #include <stdbool.h>
 
-#define CHECK_FLAG(flags, bit)   ((flags) & (1 << (bit)))
-
 
 const int MY_PAGE_SIZE = 4096;
-
-
 int NUMBER_OF_REGIONS;
 const unsigned int NUM_LEVELS = 25;
 unsigned long TOTAL_MEMORY_AVAILIABLE;
 
-multiboot_memory_map_t *memory_info;
-struct descriptor* free_blocks [25];
 
-extern char data_phys_begin[];
-extern char data_phys_end[];
+multiboot_memory_map_t *memory_info;
+
+
+extern char text_phys_begin[];
+extern char bss_phys_end[];
 
 
 struct descriptor
@@ -27,11 +24,12 @@ struct descriptor
     struct descriptor* next;
     bool is_free;
     unsigned order;
-    unsigned long no;
-    unsigned long address;
 };
 
+
 struct descriptor* descriptors;
+struct descriptor* free_blocks [25];
+
 
 unsigned long log2(unsigned long v) {
     static const unsigned long b[] = {0xAAAAAAAA, 0xCCCCCCCC, 0xF0F0F0F0,
@@ -42,18 +40,6 @@ unsigned long log2(unsigned long v) {
     }
 
     return r;
-}
-
-
-unsigned long descr_no (unsigned long address)
-{
-    return address / MY_PAGE_SIZE;
-
-}
-
-unsigned long desc_addr (unsigned long no)
-{
-    return no * MY_PAGE_SIZE;
 }
 
 
@@ -70,141 +56,32 @@ void append_to_list_head (struct descriptor* descr, unsigned order)
     }
 }
 
-void traverse_list(unsigned order)
-{
-    struct descriptor * temp = free_blocks[order];
-    if (temp != 0)
-    while (temp -> next != 0) {
-        printf("%s%d%s%x\n", "LEVEL NO ", order, " adress of block ", free_blocks[order]->address);
-        temp = temp -> next;
-    }
-}
 
-void init_buddy(multiboot_memory_map_t *memory_info) {
-
-    //allocate memory for TOTAL_MEMORY_AVAILABLE / PAGE_SIZE descriptors
-
-    TOTAL_MEMORY_AVAILIABLE = memory_info[NUMBER_OF_REGIONS - 1].addr + memory_info[NUMBER_OF_REGIONS - 1].len - memory_info[0].addr;
-
-
-    for (int i = 0; i < NUMBER_OF_REGIONS; i++)
+void remove_from_list (struct descriptor *buddy){
+    if (buddy->prev != NULL)
     {
-        if ((memory_info[i].type == 1) && (memory_info[i].len > sizeof(struct descriptor) * (TOTAL_MEMORY_AVAILIABLE / MY_PAGE_SIZE)))
+        if (buddy->next != NULL)
         {
-            descriptors = (struct descriptor*) memory_info[i].addr;
-            memory_info[i].addr = memory_info[i].addr + sizeof(struct descriptor) * (TOTAL_MEMORY_AVAILIABLE / MY_PAGE_SIZE);
-            memory_info[i].len -= sizeof(struct descriptor) * (TOTAL_MEMORY_AVAILIABLE / MY_PAGE_SIZE);
+            buddy->prev->next = buddy->next;
+            buddy->next->prev = buddy->prev;
         }
-    }
-
-//(TOTAL_MEMORY_AVAILIABLE / MY_PAGE_SIZE)
-
-    for (int j = 0; j < NUMBER_OF_REGIONS; j++) {
-        /*add unreserved memory chunk to list as block*/
-
-        multiboot_uint64_t size = memory_info[j].len / MY_PAGE_SIZE;
-
-        //round to the lowest power of two
-        while ((size & (size - 1)) != 0)
-            size -= 1;
-
-        unsigned no_level = log2(size);
-
-        if (memory_info[j].type == 1) {
-
-            descriptors[descr_no(memory_info[j].addr)].is_free = true;
-            descriptors[descr_no(memory_info[j].addr)].prev = NULL;
-            descriptors[descr_no(memory_info[j].addr)].order = no_level;
-            descriptors[descr_no(memory_info[j].addr)].no = descr_no(memory_info[j].addr);
-            descriptors[descr_no(memory_info[j].addr)].address = memory_info[j].addr;
-
-            if (free_blocks[no_level] == NULL)
-            {
-                descriptors[descr_no(memory_info[j].addr)].next = NULL;
-            }
-            else
-            {
-                descriptors[descr_no(memory_info[j].addr)].next = free_blocks[no_level];
-                free_blocks[no_level]->prev = &descriptors[descr_no(memory_info[j].addr)];
-            }
-
-
-            free_blocks[no_level] = &descriptors[descr_no(memory_info[j].addr)];
-
-
-            /*put chunk of memory in list on the level log2(size) as single block*/
-        }
-
-        if (memory_info[j].type == 2)
+        else
         {
-            descriptors[descr_no(memory_info[j].addr)].is_free = false;
-            descriptors[descr_no(memory_info[j].addr)].next = NULL;
-            descriptors[descr_no(memory_info[j].addr)].prev = NULL;
-            descriptors[descr_no(memory_info[j].addr)].order = no_level;
+            buddy->prev->next = NULL;
         }
     }
-
-
-
-    for (unsigned i = 0; i < NUM_LEVELS; i ++)
+    else
     {
-        traverse_list(i);
-    }
-
-}
-
-unsigned long pow2(unsigned order) {
-    unsigned long result = 1;
-    for (unsigned i = 0; i < order; i++) {
-        result *= 2;
-    }
-    return result;
-}
-
-unsigned long xor(unsigned long x, unsigned long y)
-{
-    unsigned long a = x & y;
-    unsigned long b = ~x & ~y;
-    unsigned long z = ~a & ~b;
-    return z;
-}
-
-
-void merge(unsigned order, unsigned long address) {
-
-    for (unsigned i = 0; i < NUM_LEVELS; i ++)
-    {
-        //traverse_list(i);
-    }
-
-
-    unsigned long block_no = descr_no(address);
-    unsigned long buddy_no = xor(block_no, pow2(order));
-
-    if (descriptors[buddy_no].is_free == true)
-    {
-        if (block_no > buddy_no)
+        if (buddy->next != NULL)
         {
-            unsigned long temp = block_no;
-            block_no = buddy_no;
-            buddy_no = temp;
+            buddy->next->prev = NULL;
         }
-
-        descriptors[block_no].order += 1;
-        descriptors[block_no].prev = descriptors[block_no].next;
-        descriptors[block_no].next = descriptors[block_no].prev;
-
-        append_to_list_head(&descriptors[block_no], order + 1);
-
-        merge (order + 1, desc_addr(block_no));
+        else
+        {
+            buddy = NULL;
+        }
     }
-
-
 }
-
-
-
-
 
 
 void pop_from_list(unsigned order)
@@ -215,7 +92,7 @@ void pop_from_list(unsigned order)
         if (free_blocks[order]->next != NULL)
         {
             free_blocks[order] = free_blocks[order]->next;
-            free_blocks[order]->next->prev = free_blocks[order]->prev;
+            free_blocks[order]->prev = NULL;
         }
         else
             free_blocks[order] = NULL;
@@ -226,96 +103,168 @@ void pop_from_list(unsigned order)
 }
 
 
+void init_buddy(multiboot_memory_map_t *memory_info) {
 
-unsigned long buddy_allocate(unsigned order)
-{
+    //allocate memory for TOTAL_MEMORY_AVAILABLE / PAGE_SIZE descriptors
 
-    if (free_blocks[order] != NULL)
+    TOTAL_MEMORY_AVAILIABLE = memory_info[NUMBER_OF_REGIONS - 1].addr + memory_info[NUMBER_OF_REGIONS - 1].len - memory_info[0].addr;
+    
+    const unsigned long num_descriptors = TOTAL_MEMORY_AVAILIABLE / MY_PAGE_SIZE;
+    bool has_found = false;
+
+    for (int i = 0; i < NUMBER_OF_REGIONS; i++)
     {
-        free_blocks[order]->is_free = false;
-        if (free_blocks[order]->next != NULL)
+
+        if ((memory_info[i].type == 1) && (memory_info[i].addr + memory_info[i].len < 0xFFFFFFFF)  && (memory_info[i].len - 1 > sizeof(struct descriptor) * num_descriptors))
         {
-            free_blocks[order] = free_blocks[order]->next;
-            free_blocks[order]->next->prev = free_blocks[order]->prev;
-        }
-        else
-            free_blocks[order] = NULL;
+            if (memory_info[i].addr == 0x0)
+                memory_info[i].addr += 1;
 
-        return free_blocks[order]->address;
-    }
-
-
-    unsigned min_availiable_order = 0;
-    for (unsigned i = order; i < NUM_LEVELS; i++) {
-        if (free_blocks[i] != NULL) {
-            min_availiable_order = i;
+            descriptors = (struct descriptor*) memory_info[i].addr;
+            memory_info[i].addr = memory_info[i].addr + sizeof(struct descriptor) * num_descriptors;
+            memory_info[i].len -= sizeof(struct descriptor) * num_descriptors;
+            has_found = true;
             break;
         }
     }
 
-    unsigned current = min_availiable_order;
-    while (current > order) {
-        for (unsigned i = 0; i < NUM_LEVELS; i ++)
-        {
-            //traverse_list(i);
-        }
-
-
-        descriptors[free_blocks[current]->no].order -= 1;
-        append_to_list_head(&descriptors[free_blocks[current]->no], current - 1);
-
-        descriptors[descr_no(free_blocks[current]->address + pow2(current - 1) * MY_PAGE_SIZE)].is_free = true;
-        descriptors[descr_no(free_blocks[current]->address + pow2(current - 1) * MY_PAGE_SIZE)].no = descr_no(free_blocks[current]->address + pow2(current - 1) * MY_PAGE_SIZE);
-        descriptors[descr_no(free_blocks[current]->address + pow2(current - 1) * MY_PAGE_SIZE)].address = free_blocks[current]->address + pow2(current - 1) * MY_PAGE_SIZE;
-        descriptors[descr_no(free_blocks[current]->address + pow2(current - 1) * MY_PAGE_SIZE)].order = current - 1;
-        append_to_list_head(&descriptors[descr_no(free_blocks[current]->address + pow2(current - 1) * MY_PAGE_SIZE)], current - 1);
-
-        pop_from_list(current);
-
-
-        current--;
-    }
-
-    /*return suitable block, delete it from free blocks list*/
-
-    unsigned long return_value = free_blocks[current]->address;
-
-    if (free_blocks[order] != NULL)
+    if (!has_found)
     {
-        free_blocks[order]->is_free = false;
-        if (free_blocks[order]->next != NULL)
-        {
-            free_blocks[order] = free_blocks[order]->next;
-            free_blocks[order]->next->prev = free_blocks[order]->prev;
-        }
-        else
-            free_blocks[order] = NULL;
-
-        return free_blocks[order]->address;
+        printf("%s\n", "No available memory to init buddy allocator.");
     }
-    return return_value;
+    else
+    {
+        for (unsigned long i = 0; i < num_descriptors; i ++)
+        {
+            descriptors[i].is_free = false;
+            descriptors[i].order = 0;
+        }
+
+
+        for (int j = 0; j < NUMBER_OF_REGIONS; j++) {
+
+            unsigned long address = memory_info[j].addr;
+            unsigned long shift_right = MY_PAGE_SIZE - address % MY_PAGE_SIZE;
+            unsigned long shift_left = (address + memory_info[j].len) % MY_PAGE_SIZE;
+
+            unsigned long left_border;
+            unsigned long right_border;
+
+         
+            left_border = address + shift_right;
+            right_border = (address + memory_info[j].len) - shift_left;
+
+            if (left_border < right_border)
+            {
+                if (memory_info[j].type == 1)
+                {
+                    unsigned long region_size = (right_border - left_border) / MY_PAGE_SIZE;
+                   
+                    
+                    for (unsigned long i = 0; i < region_size; i ++)
+                    {
+                        buddy_free(left_border + i * MY_PAGE_SIZE);
+                    }
+                   
+                }
+            }
+        }
+
+    }
+}
+
+
+unsigned long buddy_allocate(unsigned order)
+{
+    unsigned current = 0;
+    bool has_found = false;
+
+    for (unsigned i = order; i < NUM_LEVELS; i++) {
+        if (free_blocks[i] != NULL) {
+            current = i;
+            has_found = true;
+            break;
+        }
+    }
+
+    if (!has_found)
+    {
+        printf("%s", "No appropriate memory available.");
+        return 0;
+    }
+    else
+    {
+        while (current > order) {
+            struct descriptor *page = free_blocks[current];
+            unsigned long page_no = page - descriptors;
+            unsigned long buddy_no = page_no ^ (1ul << (current - 1));
+            struct descriptor *buddy = &descriptors[buddy_no];
+
+            pop_from_list(current);
+            append_to_list_head(buddy, current - 1);
+            append_to_list_head(page, current - 1);
+
+            buddy->order = current - 1;
+            buddy->is_free = 1;
+            page->order = current - 1;
+            --current;
+        }
+
+        struct descriptor *page = free_blocks[order];
+
+        pop_from_list(order);
+        page->is_free = 0;
+        return (page - descriptors) * MY_PAGE_SIZE;
+    }
 
 }
 
 
-void buddy_free(unsigned order, unsigned long address)
+void buddy_free(unsigned long address)
 {
-    descriptors[descr_no(address)].is_free = true;
+    const unsigned long count = TOTAL_MEMORY_AVAILIABLE / MY_PAGE_SIZE;
+    struct descriptor *page = &descriptors[address / MY_PAGE_SIZE];
+    unsigned long page_no = page - descriptors;
 
-    merge(order, address);
+    while (page -> order < NUM_LEVELS - 1) {
+        unsigned long buddy_no = page_no ^ (1 << page -> order);
+        
+        struct descriptor *buddy = &descriptors[buddy_no];
+
+  printf("%s %d\n", "Freed", page_no);
+        if (buddy_no >= count)
+            break;
+
+        if (!buddy->is_free || buddy->order != page -> order)
+            break;
+
+        remove_from_list(buddy);
+    
+        
+  
+        if (page_no > buddy_no) {
+            page = buddy;
+            page_no = buddy_no;
+        }
+        page -> order += 1;
+    }
+    page->is_free = 1;
+    append_to_list_head(page, page -> order);
 }
 
 void read_memory_map(struct multiboot_info *mb_info) {
 
     multiboot_memory_map_t *mmap = (multiboot_memory_map_t *) (uintptr_t) mb_info->mmap_addr;
     NUMBER_OF_REGIONS = mb_info -> mmap_length / (mmap->size + sizeof (mmap -> size));
-    printf("%s%d", "NUMBER_OF_REGIONS ", NUMBER_OF_REGIONS);
+    printf("%s%d\n", "NUMBER_OF_REGIONS ", NUMBER_OF_REGIONS);
 
+    uint64_t kernel_begin = (uint64_t) text_phys_begin;
+    uint64_t kernel_end = (uint64_t) bss_phys_end;
 
     // allocating memory for memory_info table
     for (int i = 0; i < NUMBER_OF_REGIONS; i ++)
     {
-        if ((mmap -> type == 1) && (mmap -> len > (NUMBER_OF_REGIONS + 3) * sizeof (multiboot_memory_map_t)) )
+        if ((mmap -> type == 1) && (mmap -> len > (NUMBER_OF_REGIONS + 3) * sizeof (multiboot_memory_map_t)) && ((!(mmap -> addr <= kernel_begin) && (!(mmap -> addr + mmap -> len >= kernel_end )))) )
         {
             memory_info = (multiboot_memory_map_t *) mmap -> addr;
             break;
@@ -324,8 +273,7 @@ void read_memory_map(struct multiboot_info *mb_info) {
                                            + mmap->size + sizeof(mmap->size));
     }
 
-    uintptr_t kernel_begin = (uintptr_t) data_phys_begin;
-    uintptr_t kernel_end = (uintptr_t) data_phys_end;
+
 
     mmap = (multiboot_memory_map_t *) (uintptr_t) mb_info->mmap_addr;
 
@@ -346,7 +294,7 @@ void read_memory_map(struct multiboot_info *mb_info) {
 
             memory_info[i].addr = mmap -> addr + NUMBER_OF_REGIONS * sizeof (multiboot_memory_map_t);
             memory_info[i].type = 1;
-            memory_info[i].len = mmap -> len - memory_info[i].addr;
+            memory_info[i].len = mmap -> len - NUMBER_OF_REGIONS * sizeof (multiboot_memory_map_t);
             memory_info[i].size = mmap -> size;
 
             i += 1;
@@ -354,7 +302,7 @@ void read_memory_map(struct multiboot_info *mb_info) {
 
         else
         {
-            if ((mmap -> type == 1) && ((mmap -> addr < kernel_begin) && (mmap -> addr + mmap -> len > kernel_end )))
+            if ((mmap -> type == 1) && ((mmap -> addr <= kernel_begin) && (mmap -> addr + mmap -> len >= kernel_end )))
             {
                 memory_info[i].addr = mmap->addr;
                 memory_info[i].size = mmap->size;
@@ -363,10 +311,10 @@ void read_memory_map(struct multiboot_info *mb_info) {
 
                 memory_info[i + 1].addr = kernel_begin;
                 memory_info[i + 1].size = mmap->size;
-                memory_info[i + 1].len = kernel_end - kernel_begin;
+                memory_info[i + 1].len = kernel_end - kernel_begin + 1;
                 memory_info[i + 1].type = 2;
 
-                memory_info[i + 2].addr = kernel_end;
+                memory_info[i + 2].addr = kernel_end + 1;
                 memory_info[i + 2].size = mmap->size;
                 memory_info[i + 2].len = mmap->len - memory_info[2].addr;
                 memory_info[i + 2].type = mmap->type;

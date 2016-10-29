@@ -5,7 +5,7 @@
 #include <multiboot_header.h>
 void read_memory_map(struct multiboot_info* mbi);
 
-void buddy_free (unsigned order, unsigned long address);
+void buddy_free (unsigned long address);
 
 unsigned long buddy_allocate (unsigned order);
 
