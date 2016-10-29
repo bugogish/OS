@@ -231,7 +231,7 @@ void buddy_free(unsigned long address)
         
         struct descriptor *buddy = &descriptors[buddy_no];
 
-  printf("%s %d\n", "Freed", page_no);
+
         if (buddy_no >= count)
             break;
 
